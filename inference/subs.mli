@@ -21,3 +21,5 @@ val domain : subst -> string list
 
 val join : subst list -> subst
 
+val compat : subst list -> (Ast.texpr*Ast.texpr) list
+

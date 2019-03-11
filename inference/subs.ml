@@ -51,11 +51,28 @@ let domain substitution =
   Hashtbl.fold (fun k t s -> k :: s) substitution []
 
 let rec join = function
-  | s1 :: (s2 :: rest as next) ->
+  | s1 :: (s2 :: _ as next) ->
       begin
-        Hashtbl.iter (fun key t -> extend s2 key t) s1;
+        Hashtbl.iter (fun key texp -> extend s2 key texp) s1;
         join next
       end
   | [s] -> s
-  | _ -> failwith "ree"
+  | [] -> failwith "cannot join an empty substitution list"
+
+
+(**
+ * Helper utility for finding typing context compatability goals
+ *)
+let rec compat (l:subst list) :(Ast.texpr*Ast.texpr)list =
+  let rec pairwise gamma = function
+    | [] -> []
+    | table :: rest ->
+        (Hashtbl.fold (fun k t s ->
+          match lookup gamma k with
+          | Some u -> (t, u) :: s
+          | _ -> s
+        ) table []) @ (pairwise gamma rest) in
+  match l with
+  | [] -> []
+  | gamma :: rest -> (pairwise gamma rest) @ (compat rest)
 
