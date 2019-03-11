@@ -11,6 +11,18 @@ type typing_judgement = subst*expr*texpr
 
 let fresh n  = "_V" ^ string_of_int n
 
+let unify' goals (n, (gammas, exp, texp)) =
+  match mgu goals with
+  | UOk sub ->
+      begin
+        List.iter (fun gamma -> apply_to_env sub gamma) gammas;
+        let gamma = join gammas in
+        OK (n, (gamma, apply_to_expr sub exp, apply_to_texpr sub texp))
+      end
+  | UError (t1, t2) ->
+      Error ("cannot unify "^string_of_texpr t1^" and "^string_of_texpr t2)
+
+(*
 let unify goals (n, (gamma, exp, texp)) =
   match mgu goals with
   | UOk sub -> begin
@@ -18,10 +30,12 @@ let unify goals (n, (gamma, exp, texp)) =
       OK (n, (gamma, apply_to_expr sub exp, apply_to_texpr sub texp)) end
   | UError (t1, t2) ->
       Error ("cannot unify " ^ string_of_texpr t1 ^ " and " ^ string_of_texpr t2)
-
+*)
 
 let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
   match e with
+  | Unit ->
+      OK (n, (create (), e, UnitType))
   | Int _ ->
       OK (n, (create (), e, IntType))
   | Var str ->
@@ -39,17 +53,81 @@ let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
       | OK (n, (lg, le, lt)) ->
           (match infer' r n with
           | OK (n, (rg, re, rt)) ->
-              (* unify [(lt, IntType); (rt, IntType); compat(...)?] (n, ((union
-               * lg rg), e, IntType*)
-              Error "ree"
+              let g = [lg; rg] in
+              let goals = [(lt, IntType); (rt, IntType)] @ (compat g) in
+              unify' goals (n, (g, e, IntType))
           | err -> err)
       | err -> err)
   | IsZero m ->
       (match infer' m n with
       | OK (n, (g, _, t))  ->
-          unify [(t, IntType)] (n, (g, e, BoolType))
+          unify' [(t, IntType)] (n, ([g], e, BoolType))
       | err -> err)
-  | _ -> failwith "infer': undefined"
+  | ITE (eif, ethen, eelse) ->
+      (match infer' eif n with
+      | OK (n, (gif, _, tif)) ->
+          (match infer' ethen n with
+          | OK (n, (gthen, _, tthen)) ->
+              (match infer' eelse n with
+              | OK (n, (gelse, _, telse)) ->
+                  let g = [gif; gthen; gelse] in
+                  let goals = [(tif, BoolType); (tthen, telse)] @ (compat g) in
+                  unify' goals (n, (g, e, tthen))
+              | err -> err)
+          | err -> err)
+      | err -> err)
+  | App (f, a) ->
+      (match infer' f n with
+      | OK (n, (gf, _, tf)) ->
+          (match infer' a n with
+          | OK (n, (ga, _, ta)) ->
+              let g = [ga; gf] in
+              let t = VarType (fresh n) in
+              let goals = [(tf, FuncType(ta, t))] @ (compat g) in
+              unify' goals ((n+1), (g, e, t))
+          | err -> err)
+      | err -> err)
+  | ProcUntyped (pstr, body) ->
+      (match infer' body n with
+      | OK (n, (g, _, t)) ->
+          (match lookup g pstr with
+          | Some u ->
+              begin
+                remove g pstr;
+                OK (n, (g, Proc (pstr, u, body), FuncType (u, t)))
+              end
+          | None ->
+              let u = VarType (fresh n) in
+              OK ((n+1), (g, Proc (pstr, u, body), FuncType (u, t))))
+      | err -> err)
+  | LetrecUntyped (id, pstr, param, body) ->
+      failwith "hard"
+  | Let (str, var, body) ->
+      failwith "hard"
+  | BeginEnd (elist) ->
+      failwith "hard"
+  | NewRef (v) ->
+      (match infer' v n with
+      | OK (n, (g, _, t)) ->
+          OK (n, (g, e, RefType t))
+      | err -> err)
+  | DeRef (r) ->
+      (match infer' r n with
+      | OK (n, (g, _, t)) ->
+          let s = VarType (fresh n) in
+          unify' [(t, RefType s)] ((n + 1), ([g], e, s))
+      | err -> err)
+  | SetRef (r, v) ->
+      (match infer' r n with
+      | OK (n, (gr, _, tr)) ->
+          (match infer' v n with
+          | OK (n, (gv, _, tv)) ->
+              let g = [gr; gv] in
+              let goals = [(tr, RefType tv)] @ (compat g) in
+              unify' goals (n, (g, e, UnitType))
+          | err -> err)
+      | err -> err)
+  | _ -> failwith "infer': undefined" (* need proc and letrec cases ? *)
 
 
 let string_of_typing_judgement (s, e, t) =
