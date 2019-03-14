@@ -22,16 +22,8 @@ let unify' goals (n, (gammas, exp, texp)) =
   | UError (t1, t2) ->
       Error ("cannot unify "^string_of_texpr t1^" and "^string_of_texpr t2)
 
-(*
-let unify goals (n, (gamma, exp, texp)) =
-  match mgu goals with
-  | UOk sub -> begin
-      apply_to_env sub gamma;
-      OK (n, (gamma, apply_to_expr sub exp, apply_to_texpr sub texp)) end
-  | UError (t1, t2) ->
-      Error ("cannot unify " ^ string_of_texpr t1 ^ " and " ^ string_of_texpr t2)
-*)
-
+(* TODO: Replace all _'s in the OK matches with stuff like eif with eif
+ * and replace all e's with the appropriate constructors *)
 let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
   match e with
   | Unit ->
@@ -49,47 +41,53 @@ let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
   | Sub (l, r)
   | Mul (l, r)
   | Div (l, r) ->
-      (match infer' l n with
+      let op l r = function
+        | Add (_, _) -> Add (l, r)
+        | Sub (_, _) -> Sub (l, r)
+        | Mul (_, _) -> Mul (l, r)
+        | Div (_, _) -> Div (l, r)
+        | other -> other
+      in (match infer' l n with
       | OK (n, (lg, le, lt)) ->
           (match infer' r n with
           | OK (n, (rg, re, rt)) ->
               let g = [lg; rg] in
               let goals = [(lt, IntType); (rt, IntType)] @ (compat g) in
-              unify' goals (n, (g, e, IntType))
+              unify' goals (n, (g, op l r e, IntType))
           | err -> err)
       | err -> err)
   | IsZero m ->
       (match infer' m n with
-      | OK (n, (g, _, t))  ->
-          unify' [(t, IntType)] (n, ([g], e, BoolType))
+      | OK (n, (g, m, t))  ->
+          unify' [(t, IntType)] (n, ([g], IsZero m, BoolType))
       | err -> err)
   | ITE (eif, ethen, eelse) ->
       (match infer' eif n with
-      | OK (n, (gif, _, tif)) ->
+      | OK (n, (gif, eif, tif)) ->
           (match infer' ethen n with
-          | OK (n, (gthen, _, tthen)) ->
+          | OK (n, (gthen, ethen, tthen)) ->
               (match infer' eelse n with
-              | OK (n, (gelse, _, telse)) ->
+              | OK (n, (gelse, eelse, telse)) ->
                   let g = [gif; gthen; gelse] in
                   let goals = [(tif, BoolType); (tthen, telse)] @ (compat g) in
-                  unify' goals (n, (g, e, tthen))
+                  unify' goals (n, (g, ITE(eif, ethen, eelse), tthen))
               | err -> err)
           | err -> err)
       | err -> err)
   | App (f, a) ->
       (match infer' f n with
-      | OK (n, (gf, _, tf)) ->
+      | OK (n, (gf, f, tf)) ->
           (match infer' a n with
-          | OK (n, (ga, _, ta)) ->
+          | OK (n, (ga, a, ta)) ->
               let g = [ga; gf] in
               let t = VarType (fresh n) in
               let goals = [(tf, FuncType(ta, t))] @ (compat g) in
-              unify' goals ((n+1), (g, e, t))
+              unify' goals ((n+1), (g, App (f, a), t))
           | err -> err)
       | err -> err)
   | ProcUntyped (pstr, body) ->
       (match infer' body n with
-      | OK (n, (g, _, t)) ->
+      | OK (n, (g, body, t)) ->
           (match lookup g pstr with
           | Some u ->
               begin
@@ -108,23 +106,23 @@ let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
       failwith "hard"
   | NewRef (v) ->
       (match infer' v n with
-      | OK (n, (g, _, t)) ->
-          OK (n, (g, e, RefType t))
+      | OK (n, (g, v, t)) ->
+          OK (n, (g, NewRef v, RefType t))
       | err -> err)
   | DeRef (r) ->
       (match infer' r n with
-      | OK (n, (g, _, t)) ->
+      | OK (n, (g, r, t)) ->
           let s = VarType (fresh n) in
-          unify' [(t, RefType s)] ((n + 1), ([g], e, s))
+          unify' [(t, RefType s)] ((n + 1), ([g], DeRef r, s))
       | err -> err)
   | SetRef (r, v) ->
       (match infer' r n with
-      | OK (n, (gr, _, tr)) ->
+      | OK (n, (gr, r, tr)) ->
           (match infer' v n with
-          | OK (n, (gv, _, tv)) ->
+          | OK (n, (gv, v, tv)) ->
               let g = [gr; gv] in
               let goals = [(tr, RefType tv)] @ (compat g) in
-              unify' goals (n, (g, e, UnitType))
+              unify' goals (n, (g, SetRef (r, v), UnitType))
           | err -> err)
       | err -> err)
   | _ -> failwith "infer': undefined" (* need proc and letrec cases ? *)
