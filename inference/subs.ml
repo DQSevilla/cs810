@@ -2,18 +2,17 @@ open Ast
 
 type subst = (string,Ast.texpr) Hashtbl.t
 
-let create (x:unit) =
-  Hashtbl.create 1
+let create () =
+  Hashtbl.create 10
 
-(* Using this rather than add *)
-let extend substitution key texp =
-  Hashtbl.replace substitution key texp
+let extend sub key texp =
+  Hashtbl.replace sub key texp
 
-let remove substitution key =
-  Hashtbl.remove substitution key
+let remove sub key =
+  Hashtbl.remove sub key
 
-let lookup substitution key =
-  Hashtbl.find_opt substitution key
+let lookup sub key =
+  Hashtbl.find_opt sub key
 
 let rec apply_to_texpr sub = function
   | VarType str ->
@@ -22,18 +21,48 @@ let rec apply_to_texpr sub = function
       | None -> VarType str)
   | FuncType (s, t) ->
       FuncType (apply_to_texpr sub s, apply_to_texpr sub t)
-  | RefType r -> RefType (apply_to_texpr sub r)
+  | RefType t -> RefType (apply_to_texpr sub t)
   | other -> other
 
-let apply_to_expr sub = function
-  | ProcUntyped (str, exp) ->
-      (match lookup sub str with
-      | Some t -> Proc (str, t, exp)
-      | None -> failwith "substitution on proc failed")
-  | LetrecUntyped (id, p, pexp, body) ->
-      (match lookup sub id, lookup sub p with
-      | Some s, Some t -> Letrec (s, id, p, t, pexp, body)
-      | _, _ -> failwith "substitution on letrec failed")
+let rec apply_to_expr sub = function
+  | Add (e1, e2) -> Add (apply_to_expr sub e1, apply_to_expr sub e2)
+  | Sub (e1, e2) -> Sub (apply_to_expr sub e1, apply_to_expr sub e2)
+  | Mul (e1, e2) -> Mul (apply_to_expr sub e1, apply_to_expr sub e2)
+  | Div (e1, e2) -> Div (apply_to_expr sub e1, apply_to_expr sub e2)
+  | IsZero (e) -> IsZero (apply_to_expr sub e)
+  | NewRef (e) -> NewRef (apply_to_expr sub e)
+  | DeRef (e) -> DeRef (apply_to_expr sub e)
+  | SetRef (e1, e2) -> SetRef (apply_to_expr sub e1, apply_to_expr sub e2)
+  | Let (str, def, body) -> 
+      Let (str, apply_to_expr sub def, apply_to_expr sub body)
+  | Proc (spar, tpar, body) ->
+      Proc (spar, apply_to_texpr sub tpar, apply_to_expr sub body)
+  | ProcUntyped (spar, e) ->
+      (match lookup sub spar with
+      | Some t -> Proc (spar, t, apply_to_expr sub e)
+      | None -> ProcUntyped (spar, apply_to_expr sub e))
+  | Letrec (tfun, sfun, spar, tpar, def, body) ->
+      Letrec (apply_to_texpr sub tfun,
+              sfun, spar,
+              apply_to_texpr sub tpar,
+              apply_to_expr sub def,
+              apply_to_expr sub body)
+  | LetrecUntyped (sfun, spar, def, body) ->
+      (match lookup sub sfun, lookup sub spar with
+      | Some tfun, Some tpar ->
+          Letrec (tfun, sfun, spar, tpar,
+                  apply_to_expr sub def,
+                  apply_to_expr sub body)
+      | _, _ ->
+          LetrecUntyped (sfun, spar,
+                         apply_to_expr sub def,
+                         apply_to_expr sub body))
+  | App (f, a) -> App (apply_to_expr sub f, apply_to_expr sub a)
+  | ITE (eif, ethen, eelse) ->
+      ITE (apply_to_expr sub eif, 
+           apply_to_expr sub ethen,
+           apply_to_expr sub eelse)
+  | BeginEnd (elist) -> BeginEnd (List.map (apply_to_expr sub) elist)
   | other -> other
 
 let apply_to_env sub gamma =
@@ -45,10 +74,10 @@ let apply_to_env sub gamma =
 let string_of_subs sub =
   match Hashtbl.length sub with
   | 0 -> "empty"
-  | _ -> (Hashtbl.fold (fun k t s -> s^k^":="^(string_of_texpr t)^",") sub "")
+  | _ -> Hashtbl.fold (fun k t s -> s^k^":="^(string_of_texpr t)^",") sub ""
 
-let domain substitution =
-  Hashtbl.fold (fun k t s -> k :: s) substitution []
+let domain sub =
+  Hashtbl.fold (fun k t s -> k :: s) sub []
 
 let rec join = function
   | s1 :: (s2 :: _ as next) ->
