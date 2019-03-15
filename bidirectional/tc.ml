@@ -14,8 +14,9 @@ let rec synthesize : texpr Ctx.t -> term -> texpr error = fun gamma m ->
   match m with
   | CstTrue | CstFalse -> OK BoolType
   | Var (x) ->
-      (try OK (Ctx.find (name_of x) gamma)
-      with Not_found -> Error ("type of "^(name_of x)^" not in typing context"))
+      (match Ctx.find_opt (name_of x) gamma with
+      | Some s -> OK s
+      | None -> Error ("type of " ^ name_of x ^ " not in typing context"))
   | App (func, body) ->
       (match synthesize gamma func with
       | OK FuncType (s, t) ->
