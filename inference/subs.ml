@@ -33,7 +33,7 @@ let rec apply_to_expr sub = function
   | NewRef (e) -> NewRef (apply_to_expr sub e)
   | DeRef (e) -> DeRef (apply_to_expr sub e)
   | SetRef (e1, e2) -> SetRef (apply_to_expr sub e1, apply_to_expr sub e2)
-  | Let (str, def, body) -> 
+  | Let (str, def, body) ->
       Let (str, apply_to_expr sub def, apply_to_expr sub body)
   | Proc (spar, tpar, body) ->
       Proc (spar, apply_to_texpr sub tpar, apply_to_expr sub body)
@@ -59,35 +59,31 @@ let rec apply_to_expr sub = function
                          apply_to_expr sub body))
   | App (f, a) -> App (apply_to_expr sub f, apply_to_expr sub a)
   | ITE (eif, ethen, eelse) ->
-      ITE (apply_to_expr sub eif, 
+      ITE (apply_to_expr sub eif,
            apply_to_expr sub ethen,
            apply_to_expr sub eelse)
   | BeginEnd (elist) -> BeginEnd (List.map (apply_to_expr sub) elist)
   | other -> other
 
 let apply_to_env sub gamma =
-  Hashtbl.iter (fun key t ->
-    match lookup gamma key with
-    | Some s -> extend gamma key s
-    | None -> ()) sub
+  Hashtbl.iter (fun key t -> extend gamma key (apply_to_texpr sub t)) gamma
 
 let string_of_subs sub =
-  match Hashtbl.length sub with
-  | 0 -> "empty"
-  | _ -> Hashtbl.fold (fun k t s -> s^k^":="^(string_of_texpr t)^",") sub ""
+  let fmt = fun k t s -> s ^ k ^ ":=" ^ string_of_texpr t ^ "," in
+  match Hashtbl.fold fmt sub "" with "" -> "empty" | str -> str
 
 let domain sub =
   Hashtbl.fold (fun k t s -> k :: s) sub []
 
 let rec join = function
   | s1 :: (s2 :: _ as next) ->
-      begin
-        Hashtbl.iter (fun key texp -> extend s2 key texp) s1;
-        join next
-      end
+      Hashtbl.iter (fun key t1 ->
+        match lookup s2 key with
+        | None -> extend s2 key t1
+        | Some t2 -> extend s2 key (apply_to_texpr s1 t2)) s1;
+      join next
   | [s] -> s
-  | [] -> failwith "cannot join an empty substitution list"
-
+  | [] -> create ()
 
 (**
  * Helper utility for finding typing context compatability goals
