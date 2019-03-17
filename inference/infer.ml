@@ -14,11 +14,9 @@ let fresh n  = "_V" ^ string_of_int n
 let unify' goals (n, (gammas, exp, texp)) =
   match mgu goals with
   | UOk sub ->
-      begin
-        List.iter (fun gamma -> apply_to_env sub gamma) gammas;
+        List.iter (apply_to_env sub) gammas;
         let gamma = join gammas in
         OK (n, (gamma, apply_to_expr sub exp, apply_to_texpr sub texp))
-      end
   | UError (t1, t2) ->
       Error ("cannot unify "^string_of_texpr t1^" and "^string_of_texpr t2)
 
@@ -33,10 +31,8 @@ let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
   | Var str ->
       let texp = VarType (fresh n) in
       let sub = create() in
-      begin
-        extend sub str texp;
-        OK (n+1, (sub, e, texp))
-      end
+      extend sub str texp;
+      OK (n+1, (sub, e, texp))
   | Add (l, r)
   | Sub (l, r)
   | Mul (l, r)
@@ -85,23 +81,28 @@ let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
               unify' goals ((n+1), (g, App (f, a), t))
           | err -> err)
       | err -> err)
+  | Proc (spar, tpar, body) ->
+      failwith "hard"
   | ProcUntyped (pstr, body) ->
       (match infer' body n with
       | OK (n, (g, body, t)) ->
           (match lookup g pstr with
           | Some u ->
-              begin
                 remove g pstr;
                 OK (n, (g, Proc (pstr, u, body), FuncType (u, t)))
-              end
           | None ->
               let u = VarType (fresh n) in
               OK ((n+1), (g, Proc (pstr, u, body), FuncType (u, t))))
       | err -> err)
-  | LetrecUntyped (id, pstr, param, body) ->
+  | Letrec (tfun, sfun, spar, tpar, def, body) ->
+      failwith "hard"
+  | LetrecUntyped (sfun, spar, def, body) ->
       failwith "hard"
   | Let (str, var, body) ->
-      failwith "hard"
+      (match infer' var n with
+      | OK (n, (vg, ve, vt)) ->
+          failwith "ree"
+      | err -> err)
   | BeginEnd (elist) ->
       failwith "hard"
   | NewRef (v) ->
@@ -125,7 +126,6 @@ let rec infer' (e:expr) (n:int): (int*typing_judgement) error =
               unify' goals (n, (g, SetRef (r, v), UnitType))
           | err -> err)
       | err -> err)
-  | _ -> failwith "infer': undefined" (* need proc and letrec cases ? *)
 
 
 let string_of_typing_judgement (s, e, t) =
@@ -152,3 +152,4 @@ let inf (e:string) : string =
 
 let test (n:int) : string =
   Examples.expr n |> parse |> infer_type
+
