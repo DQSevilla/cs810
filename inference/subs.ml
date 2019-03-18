@@ -3,7 +3,7 @@ open Ast
 type subst = (string,Ast.texpr) Hashtbl.t
 
 let create () =
-  Hashtbl.create 10
+  Hashtbl.create 1
 
 let extend sub key texp =
   Hashtbl.replace sub key texp
@@ -69,25 +69,22 @@ let apply_to_env sub gamma =
   Hashtbl.iter (fun key t -> extend gamma key (apply_to_texpr sub t)) gamma
 
 let string_of_subs sub =
-  let fmt = fun k t s -> s ^ k ^ ":=" ^ string_of_texpr t ^ "," in
+  let fmt = fun k t s -> k ^ ":=" ^ string_of_texpr t ^ "," ^ s in
   match Hashtbl.fold fmt sub "" with "" -> "empty" | str -> str
 
 let domain sub =
   Hashtbl.fold (fun k t s -> k :: s) sub []
 
-let rec join = function
-  | s1 :: (s2 :: _ as next) ->
-      Hashtbl.iter (fun key t1 ->
-        match lookup s2 key with
-        | None -> extend s2 key t1
-        | Some t2 -> extend s2 key (apply_to_texpr s1 t2)) s1;
-      join next
-  | [s] -> s
-  | [] -> create ()
+let join sublist =
+  List.fold_right (fun s1 s2 ->
+    Hashtbl.iter (fun key t1 ->
+      match lookup s2 key with
+      | None -> extend s2 key t1
+      | Some t2 -> extend s2 key (apply_to_texpr s1 t1)
+    ) s1;
+    s2
+  ) sublist (create ())
 
-(**
- * Helper utility for finding typing context compatability goals
- *)
 let rec compat (l:subst list) :(Ast.texpr*Ast.texpr)list =
   let rec pairwise gamma = function
     | [] -> []
