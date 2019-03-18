@@ -9,7 +9,7 @@ let mgu goals =
     | [] -> UOk (join sublist)
     | (VarType str1, VarType str2) :: goals ->
         let sub = create () in
-        let high, low = if str1 > str2 then str2, str1 else str1, str2 in
+        let low, high = if str1 > str2 then str2, str1 else str1, str2 in
         extend sub low (VarType high);
         mma (sub :: sublist) (List.map (fun (t1, t2) ->
           apply_to_texpr sub t1, apply_to_texpr sub t2) goals)

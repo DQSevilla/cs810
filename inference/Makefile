@@ -17,4 +17,4 @@ utop: byte
 test:
 	$(OCB) test.byte && ./test.byte
 
-re: clean all utop
+re: clean all
